@@ -1,0 +1,7 @@
+# opencv-python
+numpy
+pandas
+# tqdm
+# tflearn
+keras
+tensorflow=2.2.0
