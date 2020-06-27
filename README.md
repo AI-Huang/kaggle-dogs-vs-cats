@@ -13,6 +13,10 @@ The main runnable script is **dogsvscats.ipynb**. It is run in the IPython Noteb
 
 # Special function
 
-**AUC0**
+**AUC0**:
 
 AUC0 is the AUC that based on class 0 is the positive class, that is, revert class 0 and class 1 by logic.
+
+**Note**:
+
+In order to use the AUC0 function, all must be from standalone Keras package, instead of Keras-tf containing in TensorFlow 2.

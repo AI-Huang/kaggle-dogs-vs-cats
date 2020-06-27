@@ -12,16 +12,15 @@ import numpy as np
 import pandas as pd
 
 import tensorflow as tf
-from tensorflow import keras  # tf2
-from keras.optimizers import Adam
-from keras.callbacks import EarlyStopping, LearningRateScheduler, ModelCheckpoint, ReduceLROnPlateau
+# from tensorflow import keras  # tf2 Keras, not standalone Keras
+import keras
 from keras.preprocessing.image import ImageDataGenerator, load_img
-
+from keras.callbacks import EarlyStopping, LearningRateScheduler, ModelCheckpoint, ReduceLROnPlateau
+from keras.optimizers import Adam
 from resnet import model_depth, resnet_v2, lr_schedule
-# from model import auc # tf1
-# 等价于 from tf.keras.metrics import AUC
 from keras.metrics import AUC, BinaryAccuracy
 from metrics import AUC0
+
 
 # Parameters we care
 START_EPOCH = 0  # 已经完成的训练数
@@ -51,7 +50,7 @@ METRICS = [
 
 
 def main():
-    print(f"TensorFlow version: {tf.__version__}.")
+    print(f"TensorFlow version: {tf.__version__}.")  # Keras backend
     print(f"Keras version: {keras.__version__}.")
     print("If in eager mode: ", tf.executing_eagerly())
     assert tf.__version__[0] == "2"
