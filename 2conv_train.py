@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # @Date    : Feb-01-20 06:51
-# @Author  : Your Name (you@example.org)
+# @Author  : Kelly Hwong (you@example.org)
 # @Link    : https://www.kaggle.com/uysimty/keras-cnn-dog-or-cat-classification
 
 import os
@@ -82,7 +82,7 @@ def main():
     assert tf.__version__[0] == "2"
 
     print("Load Config ...")
-    with open('./config/config.json', 'r') as f:
+    with open('../config/config.json', 'r') as f:
         CONFIG = json.load(f)
     ROOT_PATH = CONFIG["ROOT_PATH"]
     print(f"ROOT_PATH: {ROOT_PATH}")
