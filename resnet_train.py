@@ -1,135 +1,101 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # @Date    : Feb-03-20 23:44
+# @Update  : Nov-08-20 00:29
 # @Author  : Kelly Hwong (you@example.org)
 # @Link    : http://example.org
 
 import os
 import sys
 import json
+import argparse
+from datetime import datetime
 import random
 import pickle
 import numpy as np
 import pandas as pd
 from optparse import OptionParser
+from sklearn.model_selection import train_test_split
 
 import tensorflow as tf  # to check backend
-# from tensorflow import keras  # if we want tf2 Keras, not standalone Keras
-import keras
-from sklearn.model_selection import train_test_split
-from keras.preprocessing.image import ImageDataGenerator, load_img
-from keras.callbacks import EarlyStopping, LearningRateScheduler, ModelCheckpoint, ReduceLROnPlateau
-from keras.optimizers import Adam
-from keras.losses import BinaryCrossentropy
-from keras.metrics import Recall, Precision, TruePositives, FalsePositives, TrueNegatives, FalseNegatives, BinaryAccuracy, AUC
-from resnet.resnet import model_depth, resnet_v2, lr_schedule
-from metrics import AUC0
-
-TOTAL_TRAIN = 30000 * 0.8
-TOTAL_VALIDATE = 30000 * 0.2
-
-# constants
-IF_DATA_AUGMENTATION = True
-NUM_CLASSES = 2
-IMAGE_WIDTH = IMAGE_HEIGHT = 128
-IMAGE_SIZE = (IMAGE_WIDTH, IMAGE_HEIGHT)
-IMAGE_CHANNELS = 1
-INPUT_SHAPE = [IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_CHANNELS]
-
-METRICS = [
-    Recall(name='recall'),
-    Precision(name='precision'),
-    TruePositives(name='tp'),  # thresholds=0.5
-    FalsePositives(name='fp'),
-    TrueNegatives(name='tn'),
-    FalseNegatives(name='fn'),
-    BinaryAccuracy(name='accuracy'),
-    AUC0(name='auc_good_0'),  # 以 good 为 positive 的 AUC
-    AUC(name='auc_bad_1')  # 以 bad 为 positive 的 AUC
-]
+from tensorflow import keras
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img
+from tensorflow.keras.callbacks import CSVLogger, EarlyStopping, LearningRateScheduler, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import BinaryCrossentropy
+from tensorflow.keras.metrics import Recall, Precision, TruePositives, FalsePositives, TrueNegatives, FalseNegatives, BinaryAccuracy, AUC
+from keras_fn.resnet import model_depth, resnet_v2, lr_schedule
+from keras_fn.metrics import AUC0
+from utils.dir_utils import makedir_exist_ok
 
 
 def cmd_parser():
-    parser = OptionParser()
-    # Parameters we care
-    parser.add_option('--start_epoch', type='int', dest='start_epoch',
-                      action='store', default=0, help='start_epoch, i.e., epoches that have been trained, e.g. 80.')  # 已经完成的训练数
-    parser.add_option('--batch_size', type='int', dest='batch_size',
-                      action='store', default=16, help='batch_size, e.g. 16.')  # 16 for Mac, 64, 128 for server
-    parser.add_option('--train_epochs', type='int', dest='train_epochs',
-                      action='store', default=150, help='train_epochs, e.g. 150.')  # training 150 epochs to fit enough
-    # parser.add_option('--if_fast_run', type='choice', dest='if_fast_run',
-    #   action='store', default=0.99, help='') # TODO
-    parser.add_option('--alpha', type='float', dest='alpha',
-                      action='store', default=0.99, help='alpha for focal loss if this loss is used.')
+    """parse arguments
+    """
+    parser = argparse.ArgumentParser()
 
-    args, _ = parser.parse_args(sys.argv[1:])
+    # Training parameters
+    parser.add_argument('--pretrain', type=bool, dest='pretrain',
+                        action='store', default=True, help='pretrain, if true, the model will be initialized by pretrained weights.')  # 已经完成的训练数
+    parser.add_argument('--start_epoch', type=int, dest='start_epoch',
+                        action='store', default=0, help='start_epoch, i.e., epoches that have been trained, e.g. 80.')  # 已经完成的训练数
+    parser.add_argument('--batch_size', type=int, dest='batch_size',
+                        action='store', default=16, help='batch_size, e.g. 16.')  # 16 for Mac, 64, 128 for server
+    parser.add_argument('--train_epochs', type=int, dest='train_epochs',
+                        action='store', default=150, help='train_epochs, e.g. 150.')  # training 150 epochs to fit enough
+
+    # parser.add_argument('--if_fast_run', type='choice', dest='if_fast_run',
+    #   action='store', default=0.99, help='') # TODO
+
+    parser.add_argument('--alpha', type=float, dest='alpha',
+                        action='store', default=0.99, help='alpha for focal loss if this loss is used.')
+
+    args = parser.parse_args()
     return args
 
 
 def main():
-    options = cmd_parser()
+    args = cmd_parser()
     if_fast_run = False
+
     print(f"TensorFlow version: {tf.__version__}.")  # Keras backend
     print(f"Keras version: {keras.__version__}.")
     print("If in eager mode: ", tf.executing_eagerly())
     assert tf.__version__[0] == "2"
 
-    print("Load Config ...")
-    with open('./config/config.json', 'r') as f:
-        CONFIG = json.load(f)
-    ROOT_PATH = CONFIG["ROOT_PATH"]
-    print(f"ROOT_PATH: {ROOT_PATH}")
-    ROOT_PATH = os.path.expanduser(ROOT_PATH)
-    print(f"ROOT_PATH: {ROOT_PATH}")
-    TRAIN_DATA_DIR = os.path.join(ROOT_PATH, CONFIG["TRAIN_DATA_DIR"])
-    print(f"TRAIN_DATA_DIR: {TRAIN_DATA_DIR}")
-
-    print("Prepare Model")
+    # Prepare model
     n = 2  # order of ResNetv2, 2 or 6
     version = 2
     depth = model_depth(n, version)
-    MODEL_TYPE = 'ResNet%dv%d' % (depth, version)
-    SAVES_DIR = "models-%s/" % MODEL_TYPE
-    SAVES_DIR = os.path.join(ROOT_PATH, SAVES_DIR)
-    if not os.path.exists(SAVES_DIR):
-        os.mkdir(SAVES_DIR)
-    MODEL_CKPT = os.path.join(
-        SAVES_DIR, "ResNet56v2-epoch-149-auc_good_0-0.9882-auc_bad_1-0.9886.h5")  # CONFIG["MODEL_CKPT"]
-    print(f"MODEL_CKPT: {MODEL_CKPT}")
+    model_type = "two_conv2d_net"
+    model_type = 'ResNet%dv%d' % (depth, version)
 
-    model = resnet_v2(input_shape=INPUT_SHAPE, depth=depth, num_classes=2)
-    model.compile(loss=BinaryCrossentropy(),
-                  optimizer=Adam(learning_rate=lr_schedule(
-                      options.start_epoch)),
-                  metrics=METRICS)
-    # model.summary()
-    print(MODEL_TYPE)
+    # experiment time
+    date_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+    # paths
+    competition_name = "dogs-vs-cats-redux-kernels-edition"
+    data_dir = os.path.expanduser(
+        f"~/.kaggle/competitions/{competition_name}")
 
-    print("Resume Training...")
-    model_ckpt_file = MODEL_CKPT
-    if os.path.exists(model_ckpt_file):
-        print("Model ckpt found! Loading...:%s" % model_ckpt_file)
-        model.load_weights(model_ckpt_file)
+    ckpt_dir = os.path.expanduser(
+        f"~/Documents/DeepLearningData/{competition_name}/ckpts/{model_type}/{date_time}")
+    log_dir = os.path.expanduser(
+        f"~/Documents/DeepLearningData/{competition_name}/logs/{model_type}/{date_time}")
+    makedir_exist_ok(ckpt_dir)
+    makedir_exist_ok(log_dir)
 
-    # Prepare model model saving directory.
-    model_name = "%s.start-%d-epoch-{epoch:03d}-auc_good_0-{auc_good_0:.4f}-auc_bad_1-{auc_bad_1:.4f}.h5" % (
-        MODEL_TYPE, options.start_epoch)
-    filepath = os.path.join(SAVES_DIR, model_name)
+    TOTAL_TRAIN = 30000 * 0.8
+    TOTAL_VALIDATE = 30000 * 0.2
 
-    # Prepare callbacks for model saving and for learning rate adjustment.
-    checkpoint = ModelCheckpoint(
-        filepath=filepath, monitor="auc_good_0", verbose=1)
-    earlystop = EarlyStopping(patience=10)
-    learning_rate_reduction = ReduceLROnPlateau(monitor="auc_good_0",
-                                                patience=2,
-                                                verbose=1,
-                                                factor=0.5,
-                                                min_lr=0.00001)
-    callbacks = [learning_rate_reduction, checkpoint]  # 不要 earlystop
+    # Input parameters
+    IMAGE_WIDTH = IMAGE_HEIGHT = 128
+    IMAGE_SIZE = (IMAGE_WIDTH, IMAGE_HEIGHT)
+    IMAGE_CHANNELS = 3
+    input_shape = (IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_CHANNELS)
+    num_classes = 2
 
     print("Prepare Data Frame...")
-    filenames = os.listdir(TRAIN_DATA_DIR)
+    filenames = os.listdir(os.path.join(data_dir, "train"))
     random.shuffle(filenames)
     labels = []
     for f in filenames:
@@ -166,13 +132,13 @@ def main():
 
     train_generator = train_datagen.flow_from_dataframe(
         train_df,
-        directory=TRAIN_DATA_DIR,
+        directory=os.path.join(data_dir, "train"),
         x_col='filename',
         y_col='label',
         target_size=IMAGE_SIZE,
         color_mode="grayscale",
         class_mode='categorical',
-        batch_size=options.batch_size,
+        batch_size=args.batch_size,
         shuffle=True,
         seed=42
     )
@@ -181,33 +147,97 @@ def main():
     valid_datagen = ImageDataGenerator(validation_split=0.2, rescale=1./255)
     validation_generator = valid_datagen.flow_from_dataframe(
         validate_df,
-        directory=TRAIN_DATA_DIR,
+        directory=os.path.join(data_dir, "train"),
         x_col='filename',
         y_col='label',
         target_size=IMAGE_SIZE,
         color_mode="grayscale",
         class_mode='categorical',
-        batch_size=options.batch_size,
+        batch_size=args.batch_size,
         shuffle=True,
         seed=42
     )
 
-    print("Fit Model...")
-    epochs = 3 if if_fast_run else options.train_epochs
+    # Prepare model
+    n = 2  # order of ResNetv2, 2 or 6
+    version = 2
+    depth = model_depth(n, version)
+    model_type = "ResNet%dv%d" % (depth, version)  # "ResNet20v2"
+    # or model_type = "keras.applications.ResNet50V2"
+    model_type = "keras.applications.ResNet50V2"
+
+    if model_type == "ResNet20v2":
+        model = resnet_v2(input_shape=input_shape,
+                          depth=depth, num_classes=num_classes)
+    elif model_type == "keras.applications.ResNet50V2":
+        weights = "imagenet" if args.pretrain else None
+        model = tf.keras.applications.ResNet50V2(
+            include_top=False,
+            weights=weights,
+            input_shape=input_shape,
+            classes=num_classes
+        )
+
+    metrics = [
+        Recall(name='recall'),
+        Precision(name='precision'),
+        TruePositives(name='tp'),  # thresholds=0.5
+        FalsePositives(name='fp'),
+        TrueNegatives(name='tn'),
+        FalseNegatives(name='fn'),
+        BinaryAccuracy(name='accuracy'),
+        # AUC0(name='auc_good_0'),  # 以 good 为 positive 的 AUC
+        AUC(name='auc_bad_1')  # 以 bad 为 positive 的 AUC
+    ]
+
+    model.compile(loss=BinaryCrossentropy(),
+                  optimizer=Adam(learning_rate=lr_schedule(
+                      args.start_epoch)),
+                  metrics=metrics)
+
+    # Resume training
+    # model_ckpt_file = MODEL_CKPT
+    # if os.path.exists(model_ckpt_file):
+    #     print("Model ckpt found! Loading...:%s" % model_ckpt_file)
+    #     model.load_weights(model_ckpt_file)
+
+    # Prepare model model saving directory.
+    model_name = "%s.start-%d-epoch-{epoch:03d}-val_loss-{val_loss:.4f}-auc_bad_1-{auc_bad_1:.4f}.h5" % (
+        model_type, args.start_epoch)
+    filepath = os.path.join(ckpt_dir, model_name)
+
+    # define callbacks
+    # checkpoint = ModelCheckpoint(filepath=filepath, monitor="acc",verbose=1)
+    current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(
+        "logs", model_type, current_time)
+    makedir_exist_ok(log_dir)
+
+    file_writer = tf.summary.create_file_writer(
+        log_dir + "/metrics")  # custom scalars
+    file_writer.set_as_default()
+
+    csv_logger = CSVLogger(os.path.join(
+        log_dir, "training.log.csv"), append=True)
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(
+        log_dir, histogram_freq=1)
+    lr_scheduler = LearningRateScheduler(lr_schedule, verbose=1)
+    callbacks = [csv_logger, tensorboard_callback, lr_scheduler]
+
+    # Fit model
+    epochs = 3 if if_fast_run else args.train_epochs
     history = model.fit(
         train_generator,
         epochs=epochs,
         validation_data=validation_generator,
-        validation_steps=TOTAL_VALIDATE//options.batch_size,
-        steps_per_epoch=TOTAL_TRAIN//options.batch_size,
         callbacks=callbacks,
-        initial_epoch=options.start_epoch
+        initial_epoch=args.start_epoch
     )
 
-    print("Save Model...")
-    model.save_weights("model-" + MODEL_TYPE + ".h5")
+    # Save last model ckpt
+    model.save_weights(f"./{model_type}-last_ckpt.h5")
 
-    print("Save History...")
+    # Save history
     with open('./history', 'wb') as pickle_file:
         pickle.dump(history.history, pickle_file)
 

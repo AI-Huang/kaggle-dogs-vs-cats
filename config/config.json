@@ -1,5 +1,0 @@
-{
-  "ROOT_PATH": "D:\\DeepLearningData\\kaggle-dogs-vs-cats",
-  "TRAIN_DATA_DIR": "data\\train\\",
-  "TEST_DATA_DIR": "data\\test"
-}
