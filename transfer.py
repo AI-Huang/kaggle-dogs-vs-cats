@@ -29,13 +29,25 @@ def cmd_parser():
     """parse arguments
     """
     parser = argparse.ArgumentParser()
+
+    def string2bool(string):
+        """string2bool
+        """
+        if string not in ["False", "True"]:
+            raise argparse.ArgumentTypeError(
+                f"""input(={string}) NOT in ["False", "True"]!""")
+        if string == "False":
+            return False
+        elif string == "True":
+            return True
+
     # Device
     parser.add_argument('--gpu', type=int, dest='gpu',
                         action='store', default=0, help='gpu, the number of the gpu used for experiment.')
 
     # Training parameters
-    parser.add_argument('--pretrain', type=int, dest='pretrain',
-                        action='store', default=0, help='pretrain, if true, the model will be initialized by pretrained weights.')
+    parser.add_argument('--pretrain', type=string2bool, dest='pretrain',
+                        action='store', default=False, help='pretrain, if true, the model will be initialized by pretrained weights.')
     parser.add_argument('--start_epoch', type=int, dest='start_epoch',
                         action='store', default=0, help='start_epoch, i.e., epoches that have been trained, e.g. 80.')  # 已经完成的训练数
     parser.add_argument('--batch_size', type=int, dest='batch_size',
@@ -50,12 +62,6 @@ def cmd_parser():
                         action='store', default=0.99, help='alpha for focal loss if this loss is used.')
 
     args = parser.parse_args()
-
-    # post processing
-    if args.pretrain == 0:
-        args.pretrain = False
-    else:
-        args.pretrain = True
 
     return args
 
