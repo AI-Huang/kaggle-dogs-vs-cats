@@ -29,14 +29,17 @@ def cmd_parser():
     """parse arguments
     """
     parser = argparse.ArgumentParser()
+    # Device
+    parser.add_argument('--gpu', type=int, dest='gpu',
+                        action='store', default=0, help='gpu, the number of the gpu used for experiment.')
 
     # Training parameters
-    parser.add_argument('--pretrain', type=bool, dest='pretrain',
-                        action='store', default=True, help='pretrain, if true, the model will be initialized by pretrained weights.')  # 已经完成的训练数
+    parser.add_argument('--pretrain', type=int, dest='pretrain',
+                        action='store', default=0, help='pretrain, if true, the model will be initialized by pretrained weights.')
     parser.add_argument('--start_epoch', type=int, dest='start_epoch',
                         action='store', default=0, help='start_epoch, i.e., epoches that have been trained, e.g. 80.')  # 已经完成的训练数
     parser.add_argument('--batch_size', type=int, dest='batch_size',
-                        action='store', default=32, help='batch_size, e.g. 16.')  # 16 for Mac, 64, 128 for server
+                        action='store', default=32, help='batch_size, e.g. 16.')  # 16 for Mac, 32, 64, 128 for server
     parser.add_argument('--epochs', type=int, dest='epochs',
                         action='store', default=150, help='epochs, e.g. 150.')  # training 150 epochs to fit enough
 
@@ -47,11 +50,22 @@ def cmd_parser():
                         action='store', default=0.99, help='alpha for focal loss if this loss is used.')
 
     args = parser.parse_args()
+
+    # post processing
+    if args.pretrain == 0:
+        args.pretrain = False
+    else:
+        args.pretrain = True
+
     return args
 
 
 def main():
     args = cmd_parser()
+
+    physical_devices = tf.config.list_physical_devices('GPU')
+    tf.config.set_visible_devices(physical_devices[args.gpu:], 'GPU')
+
     if_fast_run = False
 
     print(f"TensorFlow version: {tf.__version__}.")  # Keras backend
@@ -76,10 +90,13 @@ def main():
 
     # experiment time
     date_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-    ckpt_dir = os.path.expanduser(os.path.join(
-        "~", "Documents", "DeepLearningData", competition_name, "ckpts", model_type, date_time))
-    log_dir = os.path.expanduser(os.path.join(
-        "~", "Documents", "DeepLearningData", competition_name, "logs", model_type, date_time))
+
+    prefix = os.path.join(
+        "~", "Documents", "DeepLearningData", competition_name)
+    subfix = os.path.join(model_type,
+                          '-'.join((date_time, "pretrain", str(args.pretrain))))
+    ckpt_dir = os.path.expanduser(os.path.join(prefix, "ckpts", subfix))
+    log_dir = os.path.expanduser(os.path.join(prefix, "logs", subfix))
     makedir_exist_ok(ckpt_dir)
     makedir_exist_ok(log_dir)
 

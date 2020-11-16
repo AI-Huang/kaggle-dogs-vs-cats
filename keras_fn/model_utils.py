@@ -32,7 +32,11 @@ def create_model(model_type, input_shape, num_classes, pretrain=False, depth=Non
         model = resnet_v2(input_shape=input_shape,
                           depth=depth, num_classes=num_classes)
     elif model_type == model_types[1]:
-        weights = "imagenet" if pretrain else None
+        # weights = "imagenet" if pretrain else None
+        weights = None
+        if pretrain:
+            print("Using ImageNet weights.")
+            weights = "imagenet"
         input_ = tf.keras.layers.Input([None, None, 3], dtype=tf.uint8)
         x = tf.cast(input_, tf.float32)
         x = preprocess_input(x)
