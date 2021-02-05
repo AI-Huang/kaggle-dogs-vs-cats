@@ -3,5 +3,5 @@ numpy
 pandas
 # tqdm
 # tflearn
-keras # if use standalone keras
-tensorflow=2.2.0
+# keras # if use standalone keras
+tensorflow~=2.2.1
