@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # @Date    : Mar-03-21 16:49
-# @Author  : Kelly Hwong (dianhuangkan@gmail.com)
+# @Update  : Mar-11-21 20:23
+# @Author  : Kan HUANG (kan.huang@connect.ust.hk)
+
+"""train_torch.py
+Train models using PyTorch.
+
+Model list:
+- Vision Transformer
+"""
 
 from __future__ import print_function
 
@@ -24,13 +32,15 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
-from vit_pytorch.efficient import ViT
-
 
 def training_args():
     """parse arguments
     """
     parser = argparse.ArgumentParser()
+
+    # Model
+    parser.add_argument('--arch', type=str, dest='arch',
+                        action='store', default="resnet50", help='arch, model architecture.')
 
     # Training parameters
     parser.add_argument('--batch_size', type=int, dest='batch_size',
@@ -48,10 +58,15 @@ def training_args():
 
     args = parser.parse_args()
 
+    model_list = ["resnet50", "ViT"]
+    if args.arch not in model_list:
+        raise ValueError(
+            f"args.arch {args.arch} not in model_list {model_list}")
+
     return args
 
 
-def train(model, epochs, criterion, optimizer, train_loader, valid_loader, scheduler, **kwargs):
+def train(model, epochs, criterion, optimizer, train_loader, valid_loader, scheduler=None, **kwargs):
     device = kwargs["device"] if "device" in kwargs else "cpu"
     verbose = kwargs["verbose"] if "verbose" in kwargs else False
     save_weights = kwargs["save_weights"] if "save_weights" in kwargs else False
@@ -135,6 +150,9 @@ def train(model, epochs, criterion, optimizer, train_loader, valid_loader, sched
         tqdm.write(
             f"Epoch: {epoch+1} - loss: {epoch_loss:.4f} - acc: {epoch_accuracy:.4f} - val_loss: {epoch_val_loss:.4f} - val_acc: {epoch_val_accuracy:.4f}\n"
         )
+
+        if scheduler:
+            scheduler.step()
 
     return history
 
@@ -226,39 +244,47 @@ def main():
     print(
         f"val samples: {len(valid_data)},val batches: {len(valid_loader)}.")
 
-    # Effecient Attention
-    # Linformer
-    efficient_transformer = Linformer(
-        dim=128,
-        seq_len=49+1,  # 7x7 patches + 1 cls-token
-        depth=12,
-        heads=8,
-        k=64
-    )
-    # Visual Transformer
-    model = ViT(
-        dim=128,
-        image_size=224,
-        patch_size=32,
-        num_classes=2,
-        transformer=efficient_transformer,
-        channels=3,
-    ).to(device)
-
-    # Training
-    # loss function
-    criterion = nn.CrossEntropyLoss()
-    # optimizer
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    # scheduler TODO 没用上
-    scheduler = StepLR(optimizer, step_size=1, gamma=gamma)
+    # Select and prepare model
+    if args.arch == "ViT":
+        from vit_pytorch.efficient import ViT
+        # Effecient Attention
+        # Linformer
+        efficient_transformer = Linformer(
+            dim=128,
+            seq_len=49+1,  # 7x7 patches + 1 cls-token
+            depth=12,
+            heads=8,
+            k=64
+        )
+        # Visual Transformer
+        model = ViT(
+            dim=128,
+            image_size=224,
+            patch_size=32,
+            num_classes=2,
+            transformer=efficient_transformer,
+            channels=3,
+        ).to(device)
+        # Training configs for ViT
+        criterion = nn.CrossEntropyLoss()  # loss function
+        optimizer = optim.Adam(model.parameters(), lr=lr)  # optimizer
+        scheduler = StepLR(optimizer, step_size=1,
+                           gamma=gamma)  # scheduler TODO 没用上
+    elif args.arch == "resnet50":
+        from torchvision.models.resnet import resnet50
+        from torch.optim.lr_scheduler import MultiStepLR
+        model = resnet50().to(device)
+        # Training configs for resnet50
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=1e-3)  # optimizer
+        # ResNet learning schedule
+        scheduler = MultiStepLR(optimizer, milestones=[
+                                80, 120, 160], gamma=0.1)
 
     prefix = os.path.join(
         "~", "Documents", "DeepLearningData", competition_name)
-
-    model_type = "ViT"
     current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-    subfix = os.path.join(model_type, current_time)
+    subfix = os.path.join(args.arch, current_time)
 
     save_dir = os.path.expanduser(os.path.join(prefix, subfix, "ckpts"))
     log_dir = os.path.expanduser(os.path.join(prefix, subfix, "logs"))
@@ -267,7 +293,7 @@ def main():
     os.makedirs(log_dir, exist_ok=True)
 
     history = train(model, epochs, criterion, optimizer,
-                    train_loader, valid_loader, scheduler, device=device, verbose=True, save_weights=True, save_dir=save_dir)
+                    train_loader, valid_loader, scheduler=scheduler, device=device, verbose=True, save_weights=True, save_dir=save_dir)
 
     path = os.path.join(log_dir, "history.pickle")
     with open(path, "wb") as f:

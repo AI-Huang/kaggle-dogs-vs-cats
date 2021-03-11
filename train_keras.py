@@ -3,7 +3,14 @@
 # @Date    : Feb-03-20 23:44
 # @Update  : Nov-08-20 00:29
 # @Update  : Mar-04-21 19:29
-# @Author  : Kelly Hwong (dianhuangkan@gmail.com)
+# @Author  : Kan HUANG (kan.huang@connect.ust.hk)
+
+"""train_keras.py
+Train models using Keras.
+
+Model list:
+- tensorflow.keras.applications.ResNet50V2
+"""
 
 import os
 import argparse
@@ -24,6 +31,17 @@ def training_args():
     """
     parser = argparse.ArgumentParser()
 
+    def string2bool(string):
+        """string2bool
+        """
+        if string not in ["False", "True"]:
+            raise argparse.ArgumentTypeError(
+                f"""input(={string}) NOT in ["False", "True"]!""")
+        if string == "False":
+            return False
+        elif string == "True":
+            return True
+
     # Training parameters
     parser.add_argument('--pretrain', type=bool, dest='pretrain',
                         action='store', default=True, help='pretrain, if true, the model will be initialized by pretrained weights.')  # 已经完成的训练数
@@ -34,8 +52,8 @@ def training_args():
     parser.add_argument('--train_epochs', type=int, dest='train_epochs',
                         action='store', default=150, help='train_epochs, e.g. 150.')  # training 150 epochs to fit enough
 
-    # parser.add_argument('--if_fast_run', type='choice', dest='if_fast_run',
-    #   action='store', default=0.99, help='') # TODO
+    parser.add_argument('--if_fast_run', type=string2bool, dest='if_fast_run',
+                        action='store', default=False, help='if_fast_run, if True, the model will only be trained for 3 epochs.')
 
     parser.add_argument('--alpha', type=float, dest='alpha',
                         action='store', default=0.99, help='alpha for focal loss if this loss is used.')
@@ -46,7 +64,6 @@ def training_args():
 
 def main():
     args = training_args()
-    if_fast_run = False
 
     print(f"TensorFlow version: {tf.__version__}.")  # Keras backend
 
@@ -131,7 +148,7 @@ def main():
     callbacks = [csv_logger, tensorboard_callback, lr_scheduler]
 
     # Fit model
-    epochs = 3 if if_fast_run else args.train_epochs
+    epochs = 3 if args.if_fast_run else args.train_epochs
     history = model.fit(
         train_generator,
         epochs=epochs,
