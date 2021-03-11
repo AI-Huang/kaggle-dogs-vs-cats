@@ -11,22 +11,18 @@ import pandas as pd
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from sklearn.model_selection import train_test_split
 
-# Data loader
+# Data loader for kaggle dogs-vs-cats dataset
 
 
-def data_generators(data_dir, target_size, batch_size):
-    """data_generators
-    Inputs:
-        data_dir:
-        target_size:
-        batch_size:
-    Return:
-        train_generator:
-        validation_generator:
+def data_frames(data_dir, validation_split=0.2, seed=42):
+    """data_frames
+    Prepare DataFrame
     """
-    # Prepare DataFrame
     filenames = os.listdir(os.path.join(data_dir, "train"))
+
+    np.random.seed(seed)
     np.random.shuffle(filenames)
+
     labels = []
     for f in filenames:
         label = f.split('.')[0]
@@ -40,18 +36,36 @@ def data_generators(data_dir, target_size, batch_size):
     })
     df["label"] = df["label"].replace({0: 'cat', 1: 'dog'})
 
+    # use sklearn to do train test split
     train_df, validate_df = train_test_split(
-        df, test_size=0.20, random_state=42)
+        df, test_size=validation_split, random_state=seed)
     train_df = train_df.reset_index(drop=True)
     validate_df = validate_df.reset_index(drop=True)
 
     # total_train = train_df.shape[0]
     # total_validate = validate_df.shape[0]
 
+    return train_df, validate_df, df
+
+
+def data_generators(data_dir, target_size, batch_size, class_mode='categorical', rescale=None, validation_split=0.2, shuffle=True, seed=42):
+    """data_generators
+    Inputs:
+        data_dir:
+        target_size:
+        batch_size:
+    Return:
+        train_generator:
+        validation_generator:
+    """
+    train_df, validate_df, all_df = data_frames(
+        data_dir, validation_split=validation_split, seed=seed)
+
     # Training Generator
     # Using real-time data augmentation
     train_datagen = ImageDataGenerator(
-        # rescale=1./255,  # rescale=1./255, 因为keras.applications.resnet50.preprocess_input已经做了预处理
+        # validation_split=validation_split, # split already done by sklearn
+        rescale=rescale,
         rotation_range=15,
         shear_range=0.1,
         zoom_range=0.2,
@@ -67,16 +81,14 @@ def data_generators(data_dir, target_size, batch_size):
         y_col='label',
         target_size=target_size,
         color_mode="rgb",
-        class_mode='categorical',
+        class_mode=class_mode,
         batch_size=batch_size,
-        shuffle=True,
-        seed=42
+        shuffle=shuffle,
+        seed=seed
     )
 
-    # print(train_generator.class_indices) # {'cat': 0, 'dog': 1}
-
     # Validation Generator
-    valid_datagen = ImageDataGenerator(validation_split=0.2)
+    valid_datagen = ImageDataGenerator(rescale=rescale)
     validation_generator = valid_datagen.flow_from_dataframe(
         validate_df,
         directory=os.path.join(data_dir, "train"),
@@ -84,10 +96,10 @@ def data_generators(data_dir, target_size, batch_size):
         y_col='label',
         target_size=target_size,
         color_mode="rgb",
-        class_mode='categorical',
+        class_mode=class_mode,
         batch_size=batch_size,
-        shuffle=True,
-        seed=42
+        shuffle=shuffle,
+        seed=seed
     )
 
     return train_generator, validation_generator

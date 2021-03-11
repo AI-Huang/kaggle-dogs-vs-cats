@@ -7,8 +7,11 @@
 # training logs
 logs/
 
+# results
+results/
+
 # tensorflow/models repository
-models/
+# models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
