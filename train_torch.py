@@ -19,17 +19,14 @@ import os
 import pickle
 import random
 from datetime import datetime
-
 import numpy as np
+from sklearn.model_selection import train_test_split
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from linformer import Linformer
-from sklearn.model_selection import train_test_split
-from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
+from linformer import Linformer
 from tqdm import tqdm
 
 
@@ -46,7 +43,7 @@ def training_args():
     parser.add_argument('--batch_size', type=int, dest='batch_size',
                         action='store', default=64, help='batch_size, e.g. 32.')
     parser.add_argument('--epochs', type=int, dest='epochs',
-                        action='store', default=20, help='training epochs, e.g. 100.')  # origin exper 100, ETA about 2 hours
+                        action='store', default=100, help='training epochs, e.g. 100.')
     parser.add_argument('--lr', type=float, dest='lr',
                         action='store', default=3e-5, help='')
     parser.add_argument('--gamma', type=float, dest='gamma',
@@ -84,6 +81,7 @@ def train(model, epochs, criterion, optimizer, train_loader, valid_loader, sched
         "epoch_val_loss": [],
         "epoch_val_accuracy": []
     }
+    writer = SummaryWriter()
 
     step = 0
     for epoch in tqdm(range(epochs)):
@@ -92,6 +90,7 @@ def train(model, epochs, criterion, optimizer, train_loader, valid_loader, sched
 
         # On train set
         history["epoch"].append(epoch)
+
         for data, label in tqdm(train_loader):
             history["step"].append(step)
 
@@ -113,10 +112,14 @@ def train(model, epochs, criterion, optimizer, train_loader, valid_loader, sched
 
             history["step_loss"].append(loss)
             history["step_acc"].append(acc)
+            writer.add_scalar('train/loss_step', loss, step)
+            writer.add_scalar('train/accuracy_step', acc, step)
             step += 1
 
-        history["epoch_accuracy"].append(epoch_accuracy)
         history["epoch_loss"].append(epoch_loss)
+        history["epoch_accuracy"].append(epoch_accuracy)
+        writer.add_scalar('train/loss_epoch', epoch_loss, epoch)
+        writer.add_scalar('train/accuracy_epoch', epoch_accuracy, epoch)
 
         if verbose:
             tqdm.write(f"Epoch average loss: {epoch_loss:.4f}.")
@@ -144,8 +147,10 @@ def train(model, epochs, criterion, optimizer, train_loader, valid_loader, sched
         if verbose:
             tqdm.write(f"Epoch average val_loss: {epoch_val_loss:.4f}.")
 
-        history["epoch_val_accuracy"].append(epoch_val_accuracy)
         history["epoch_val_loss"].append(epoch_val_loss)
+        history["epoch_val_accuracy"].append(epoch_val_accuracy)
+        writer.add_scalar('val/loss_epoch', epoch_val_loss, epoch)
+        writer.add_scalar('val/accuracy_epoch', epoch_val_accuracy, epoch)
 
         tqdm.write(
             f"Epoch: {epoch+1} - loss: {epoch_loss:.4f} - acc: {epoch_accuracy:.4f} - val_loss: {epoch_val_loss:.4f} - val_acc: {epoch_val_accuracy:.4f}\n"
@@ -247,6 +252,7 @@ def main():
     # Select and prepare model
     if args.arch == "ViT":
         from vit_pytorch.efficient import ViT
+        from torch.optim.lr_scheduler import StepLR
         # Effecient Attention
         # Linformer
         efficient_transformer = Linformer(
@@ -267,9 +273,10 @@ def main():
         ).to(device)
         # Training configs for ViT
         criterion = nn.CrossEntropyLoss()  # loss function
-        optimizer = optim.Adam(model.parameters(), lr=lr)  # optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)  # optimizer
         scheduler = StepLR(optimizer, step_size=1,
                            gamma=gamma)  # scheduler TODO 没用上
+        scheduler = None
     elif args.arch == "resnet50":
         from torchvision.models.resnet import resnet50
         from torch.optim.lr_scheduler import MultiStepLR
